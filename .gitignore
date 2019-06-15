@@ -1,0 +1,9 @@
+shm
+db_fix
+verify
+*.o
+database
+database.*
+z
+zz
+zzz

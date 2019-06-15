@@ -1,2 +1,2 @@
-# oven
-Oven software written in C that runs outside of IRAF
+Oven software that runs outside of IRAF.
+Written in the C language.

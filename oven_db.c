@@ -57,7 +57,7 @@ db_find ( int noven, int ncomp )
         return p;
 }
 
-void
+int
 load_database ( database *db )
 {
 	struct stat sbuf;
@@ -68,14 +68,14 @@ load_database ( database *db )
 
 	if ( stat ( DB_FILE, &sbuf ) < 0 ) {
 	    printf ( "No database file found\n" );
-	    return;
+	    return 0;
 	}
 
 	if ( sbuf.st_size != expect ) {
 	    printf ( "Database file wrong size (loading skipped)\n" );
 	    printf ( "Database file has %d bytes\n", sbuf.st_size );
 	    printf ( "Expect %d bytes\n", expect );
-	    return;
+	    return 0;
 	}
 
 	printf ( "Found database file on disk\n" );
@@ -84,11 +84,12 @@ load_database ( database *db )
 	fd = open ( DB_FILE, O_RDONLY );
 	if ( fd < 0 ) {
 	    printf ( "Unable to open database file\n" );
-	    return;
+	    return 0;
 	}
 	read ( fd, &db->biparameter, sizeof(b_database) );
 	read ( fd, &db->parameter, sizeof(p_database) );
 	close ( fd );
+	return 1;
 }
 
 /* We only call this if we have discovered that the SHM segment
@@ -123,9 +124,12 @@ db_create ( int noven, int ncomp )
 	memset ( (char *) dp, 0, sizeof(database) );
 
 	/* Load database from binary file on disk */
-	load_database ( dp );
-
-	printf ( "Shared memory database created and initialized\n" );
+	if ( load_database ( dp ) )
+	    printf ( "Shared memory database created and initialized\n" );
+	else {
+	    printf ( "Shared memory database created, but ** NOT ** initialized\n" );
+	    printf ( " *** Trouble\n" );
+	}
 
         return dp;
 }

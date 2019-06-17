@@ -30,6 +30,7 @@ verify:	$(V_OBJ)
 install: all
 	cp shm /home/tom/bin
 	cp db_fix /home/tom/bin
+	cp oven_db /home/tom/bin
 
 clean:
 	rm -f shm db_fix

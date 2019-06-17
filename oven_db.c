@@ -12,14 +12,27 @@
 
 #include <stdio.h>
 #include <stdlib.h>
+#include <unistd.h>
+#include <fcntl.h>
 
 #include <sys/ipc.h>
 #include <sys/shm.h>
+#include <sys/stat.h>
 
 #include "oven.h"
 
+#define DB_FILE	"database"
+
 #define DEFAULT_OVEN	0
 #define DEFAULT_COMP	0
+
+/* TODO - 
+ * add options
+ * -M for meter cubed defaults
+ * -b to bypass loading database
+ * -l for force loading database
+ * -oO:C to specify oven:comp
+ */
 
 void
 shm_probe ( int noven, int ncomp )
@@ -67,6 +80,46 @@ shmalloc ( int nbytes, int noven, int ncomp, int readonly )
         return (shmptr);
 }
 
+void
+load_database ( database *db )
+{
+	struct stat sbuf;
+	int expect;
+	int fd;
+
+	expect = sizeof(b_database) + sizeof(p_database);
+
+	if ( stat ( DB_FILE, &sbuf ) < 0 ) {
+	    printf ( "No database file found\n" );
+	    return;
+	}
+
+	if ( sbuf.st_size != expect ) {
+	    printf ( "Database file wrong size (loading skipped)\n" );
+	    printf ( "Database file has %d bytes\n", sbuf.st_size );
+	    printf ( "Expect %d bytes\n", expect );
+	    return;
+	}
+
+	printf ( "Found database file\n" );
+	printf ( "Loading %d bytes (B+P) to shm database from disk\n", sbuf.st_size );
+
+	fd = open ( DB_FILE, O_RDONLY );
+	if ( fd < 0 ) {
+	    printf ( "Unable to open database file\n" );
+	    return;
+	}
+	read ( fd, &db->biparameter, sizeof(b_database) );
+	read ( fd, &db->parameter, sizeof(p_database) );
+	close ( fd );
+
+	/*
+	fread ((char *)Bdb, sizeof(b_database), 1, fp);
+	fread ((char *)Pdb, sizeof(p_database), 1, fp);
+	*/
+}
+
+
 #ifdef notdef
 #define DB_SIZE 263748
 // #define DB_SIZE 100000
@@ -87,10 +140,7 @@ show_sizes ( void )
 	printf ( "total database: %9d bytes\n", sizeof(database) );
 }
 
-/* readonly must be zero to create a segment.
- */
-
-void
+char *
 create_db ( void )
 {
 	char *dbp;
@@ -115,13 +165,19 @@ create_db ( void )
 	// works fine
 	// dbp = shmalloc ( DB_SIZE, 0, 0, 0 );
 	printf ( "Got %016lx\n", dbp );
+	return dbp;
 }
 
 int
 main ( int argc, char **argv )
 {
+	char *dbp;
+
 	// show_sizes ();
-	create_db ();
+	dbp = create_db ();
+
+	load_database ( (database *) dbp );
+
 	exit ( 0 );
 }
 

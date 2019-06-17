@@ -9,10 +9,13 @@ CC = cc -m32
 .c.o:
 	-$(CC) -c $<
 
-all:	shm db_fix verify
+all:	oven_db shm db_fix verify
 
 shm:	shm.c
 	$(CC) -o shm shm.c
+
+oven_db:	oven_db.c
+	$(CC) -o oven_db oven_db.c
 
 DB_OBJ = db_fix.o fix_oven.o
 

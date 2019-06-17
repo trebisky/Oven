@@ -14,6 +14,7 @@
 #include <stdlib.h>
 #include <unistd.h>
 #include <fcntl.h>
+#include <string.h>
 
 #include <sys/ipc.h>
 #include <sys/shm.h>
@@ -34,50 +35,26 @@
  * -oO:C to specify oven:comp
  */
 
-void
-shm_probe ( int noven, int ncomp )
+database *
+db_find ( int noven, int ncomp )
 {
         key_t   key = 256 + noven%16*16 + ncomp%4;
 	int shmid;
+	database *p;
 
         shmid = shmget ( key, 0, 0);
 	if ( shmid == -1 ) {
 	    printf ( "Probe failed to find shm\n" );
-	    return;
+            return ((database *)0);
 	}
-	printf ( "Probe found shm at %d\n", shmid );
-}
+	printf ( "Found existing shm at ID: %d\n", shmid );
 
-char    *
-shmalloc ( int nbytes, int noven, int ncomp, int readonly )
-{
-        key_t   key = 256 + noven%16*16 + ncomp%4;
-        int     shmflg1 = (readonly) ? 0444 : 0644 | IPC_CREAT;
-        int     shmflg2 = (readonly) ? SHM_RDONLY : 0;
-        int     shmid;
-        char    *shmptr;
-
-	/* If the segment already exists, this works fine and
-	 *  returns the shmid
-	 */
-	printf ( "Try shmget with %d %d %08x\n", key, nbytes, shmflg1 );
-        if ((shmid = shmget (key, nbytes, shmflg1)) == -1) {
-            // if (!readonly)
-            //    perror ("shmget");
-	    printf ( "shmget fails\n" );
-            return ((char *)0);
+        p = (database *) shmat (shmid, (char *) 0, SHM_RDONLY );
+	if ( p == (database *) -1 ) {
+	    printf ( "Find failed to attach shm\n" );
+            return ((database *)0);
         }
-
-	printf ( "shmget returned id = %d\n", shmid );
-
-        shmptr = (char *) shmat (shmid, (char *)0, shmflg2);
-	if ( shmptr == (char *) -1 ) {
-            // if (!readonly)
-            //    perror ("shmat");
-	    printf ( "shmat fails\n" );
-            return ((char *)0);
-        }
-        return (shmptr);
+        return p;
 }
 
 void
@@ -101,7 +78,7 @@ load_database ( database *db )
 	    return;
 	}
 
-	printf ( "Found database file\n" );
+	printf ( "Found database file on disk\n" );
 	printf ( "Loading %d bytes (B+P) to shm database from disk\n", sbuf.st_size );
 
 	fd = open ( DB_FILE, O_RDONLY );
@@ -112,13 +89,63 @@ load_database ( database *db )
 	read ( fd, &db->biparameter, sizeof(b_database) );
 	read ( fd, &db->parameter, sizeof(p_database) );
 	close ( fd );
-
-	/*
-	fread ((char *)Bdb, sizeof(b_database), 1, fp);
-	fread ((char *)Pdb, sizeof(p_database), 1, fp);
-	*/
 }
 
+/* We only call this if we have discovered that the SHM segment
+ * does not exist, so we must be able to write to it,
+ * i.e. readonly access makes no sense here.
+ */
+database *
+db_create ( int noven, int ncomp )
+{
+        key_t   key;
+	int shmid;
+	database *dp;
+
+	key = 256 + noven%16*16 + ncomp%4;
+        shmid = shmget ( key, sizeof(database), 0644 | IPC_CREAT );
+	if ( shmid == -1 ) {
+	    printf ( "db_creat: shmget fails\n" );
+            return ((database *)0);
+	}
+
+	// printf ( "shmget returned id = %d\n", shmid );
+
+        dp = (database *) shmat (shmid, (char *)0, 0);
+	if ( dp == (database *) -1 ) {
+	    printf ( "db_create: shmat fails\n" );
+            return ((database *)0);
+        }
+
+	printf ( "Created shm at ID: %d\n", shmid );
+
+	/* Fill with zeros */
+	memset ( (char *) dp, 0, sizeof(database) );
+
+	/* Load database from binary file on disk */
+	load_database ( dp );
+
+	printf ( "Shared memory database created and initialized\n" );
+
+        return dp;
+}
+
+int
+main ( int argc, char **argv )
+{
+	database *dp;
+
+	// printf ( "Sizeof datbase: %d\n", sizeof(database) );
+
+	dp = db_find ( DEFAULT_OVEN, DEFAULT_COMP );
+	if ( ! dp ) {
+	    dp = db_create ( DEFAULT_OVEN, DEFAULT_COMP );
+	}
+
+	exit ( 0 );
+}
+
+/* ------------------------------------------------ */
 
 #ifdef notdef
 #define DB_SIZE 263748
@@ -127,7 +154,6 @@ load_database ( database *db )
 // #define DB_SIZE 10000
 // #define DB_SIZE 4096
 // #define DB_SIZE 1024
-#endif
 
 void
 show_sizes ( void )
@@ -140,45 +166,7 @@ show_sizes ( void )
 	printf ( "total database: %9d bytes\n", sizeof(database) );
 }
 
-char *
-create_db ( void )
-{
-	char *dbp;
-	int nb = sizeof(database);
-	int readonly = 0;
+#endif
 
-	// printf ( "Sizeof pointer: %d\n", sizeof(dbp) );
-
-	// printf ( "Sizeof datbase: %d\n", nb );
-
-	shm_probe ( DEFAULT_OVEN, DEFAULT_COMP );
-
-	// always fails readonly, as it should if the segment
-	// does not already exist.
-	dbp = shmalloc ( nb, DEFAULT_OVEN, DEFAULT_COMP, readonly );
-
-	if ( ! dbp ) {
-	    printf ( "Failed to allocate shm\n" );
-	    exit ( 1 );
-	}
-
-	// works fine
-	// dbp = shmalloc ( DB_SIZE, 0, 0, 0 );
-	printf ( "Got %016lx\n", dbp );
-	return dbp;
-}
-
-int
-main ( int argc, char **argv )
-{
-	char *dbp;
-
-	// show_sizes ();
-	dbp = create_db ();
-
-	load_database ( (database *) dbp );
-
-	exit ( 0 );
-}
 
 /* THE END */
